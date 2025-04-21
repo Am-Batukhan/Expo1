@@ -1,3 +1,5 @@
+// components/Notes/AddNote.js
+import React, { useState, useEffect } from "react";
 import {
   View,
   TextInput,
@@ -6,40 +8,12 @@ import {
   StyleSheet,
   Text,
 } from "react-native";
-import { SQLiteProvider, useSQLiteContext } from "expo-sqlite";
-import { useState } from "react";
+import { useSQLiteContext } from "expo-sqlite";
 import { useNavigation } from "@react-navigation/native";
 import { Picker } from "@react-native-picker/picker";
 
-const initializeDB = async (db) => {
-  try {
-    await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS notesTable (
-        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-        date TEXT NOT NULL,
-        title TEXT NOT NULL,
-        note TEXT NOT NULL,
-        priority TEXT
-      );
-    `);
-
-    try {
-      await db.execAsync(`ALTER TABLE notesTable ADD COLUMN priority TEXT;`);
-    } catch (err) {}
-
-    console.log("DB connected");
-  } catch (error) {
-    console.log("Error in connecting DB", error);
-  }
-};
-
 export default function AddNote() {
-  return (
-    <SQLiteProvider databaseName="SDK52Test.db" onInit={initializeDB}>
-      <NoteInput />
-    </SQLiteProvider>
-  );
+  return <NoteInput />;
 }
 
 export function NoteInput() {
@@ -48,23 +22,42 @@ export function NoteInput() {
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
   const [priority, setPriority] = useState("Medium");
+  const [categories, setCategories] = useState([]);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+
+  // Lấy danh mục từ database
+  const fetchCategories = async () => {
+    try {
+      const result = await db.getAllAsync("SELECT * FROM categories");
+      setCategories(result);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
   const addNote = async () => {
     if (!title.trim() || !note.trim()) {
       Alert.alert("Title and note cannot be empty.");
       return;
     }
-
     const dateString = new Date().toISOString();
     const date = dateString.slice(0, dateString.indexOf("T")).split("-").reverse().join("-");
 
-    await db.runAsync(
-      "INSERT INTO notesTable (date, title, note, priority) VALUES (?, ?, ?, ?)",
-      [date, title, note, priority]
-    );
-
-    Alert.alert("Note Added");
-    navigation.replace("NotesScreen");
+    try {
+      await db.runAsync(
+        "INSERT INTO notesTable (date, title, note, priority, category) VALUES (?, ?, ?, ?, ?)",
+        [date, title, note, priority, selectedCategory]
+      );
+      Alert.alert("Note Added");
+      navigation.goBack();
+    } catch (error) {
+      console.error("Error adding note:", error);
+      Alert.alert("Error", "Could not add note");
+    }
   };
 
   return (
@@ -95,16 +88,26 @@ export function NoteInput() {
           <Picker.Item label="High" value="High" />
         </Picker>
       </View>
+      <View style={styles.pickerContainer}>
+        <Text style={styles.label}>Category:</Text>
+        <Picker
+          selectedValue={selectedCategory}
+          onValueChange={(itemValue) => setSelectedCategory(itemValue)}
+          style={styles.picker}
+        >
+          <Picker.Item label="No Category" value={null} />
+          {categories.map((category) => (
+            <Picker.Item key={category.id} label={category.name} value={category.name} />
+          ))}
+        </Picker>
+      </View>
       <Button title="ADD NOTE" onPress={addNote} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-  },
+  container: { flex: 1, backgroundColor: "#fff" },
   titleInput: {
     fontSize: 18,
     fontWeight: "bold",
@@ -119,17 +122,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlignVertical: "top",
   },
-  pickerContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  label: {
-    fontSize: 16,
-    marginBottom: 4,
-    fontWeight: "500",
-  },
-  picker: {
-    backgroundColor: "#eee",
-    borderRadius: 10,
-  },
+  pickerContainer: { paddingHorizontal: 20, paddingBottom: 20 },
+  label: { fontSize: 16, marginBottom: 4, fontWeight: "500" },
+  picker: { backgroundColor: "#eee", borderRadius: 10 },
 });
